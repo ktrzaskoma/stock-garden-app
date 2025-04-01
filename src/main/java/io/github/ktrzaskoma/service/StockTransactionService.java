@@ -1,71 +1,91 @@
 package io.github.ktrzaskoma.service;
 
+import io.github.ktrzaskoma.dto.TransactionReadModel;
+import io.github.ktrzaskoma.dto.TransactionWriteModel;
 import io.github.ktrzaskoma.model.Portfolio;
 import io.github.ktrzaskoma.model.StockTransaction;
 import io.github.ktrzaskoma.model.TransactionType;
 import io.github.ktrzaskoma.repository.StockTransactionRepository;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintWriter;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Service
 public class StockTransactionService {
 
-    private final StockTransactionRepository stockTransactionRepository;
-    private final AlphaVantageService alphaVantageService;
+    private final StockTransactionRepository transactionRepo;
+    private final PortfolioService portfolioService;
+    private final AlphaVantageService alphaService;
 
-
-    public StockTransactionService(StockTransactionRepository stockTransactionRepository, AlphaVantageService alphaVantageService) {
-        this.stockTransactionRepository = stockTransactionRepository;
-        this.alphaVantageService = alphaVantageService;
+    public StockTransactionService(StockTransactionRepository transactionRepo, PortfolioService portfolioService, AlphaVantageService alphaService) {
+        this.transactionRepo = transactionRepo;
+        this.portfolioService = portfolioService;
+        this.alphaService = alphaService;
     }
 
-    public StockTransaction buy(Portfolio portfolio, String symbol, int quantity, LocalDateTime timestamp) {
-        double price = alphaVantageService.getTransactionPrice(symbol, timestamp);
-        StockTransaction tx = new StockTransaction(symbol, quantity, TransactionType.BUY, price, timestamp, portfolio);
-        return stockTransactionRepository.save(tx);
+    public TransactionReadModel handleBuy(Long portfolioId, TransactionWriteModel request) {
+        Portfolio portfolio = portfolioService.getPortfolioById(portfolioId);
+        double price = alphaService.getTransactionPrice(request.getSymbol(), request.getTime());
+        StockTransaction tx = new StockTransaction(request.getSymbol(), request.getQuantity(), TransactionType.BUY, price, request.getTime(), portfolio);
+        transactionRepo.save(tx);
+        return mapToDto(tx);
     }
 
-
-    public StockTransaction sell(Portfolio portfolio, String symbol, int quantity, LocalDateTime time) {
-        List<StockTransaction> all = stockTransactionRepository.findByPortfolioId(portfolio.getId());
-
-        int owned = all.stream()
-                .filter(tx -> tx.getSymbol().equalsIgnoreCase(symbol))
-                .mapToInt(tx -> tx.getTransactionType() == TransactionType.BUY ? tx.getQuantity() : -tx.getQuantity())
+    public TransactionReadModel handleSell(Long portfolioId, TransactionWriteModel request) {
+        Portfolio portfolio = portfolioService.getPortfolioById(portfolioId);
+        int owned = transactionRepo.findByPortfolioId(portfolioId).stream()
+                .filter(t -> t.getSymbol().equalsIgnoreCase(request.getSymbol()))
+                .mapToInt(t -> t.getTransactionType() == TransactionType.BUY ? t.getQuantity() : -t.getQuantity())
                 .sum();
 
-        if (quantity > owned) {
-            throw new IllegalArgumentException("Nie możesz sprzedać więcej akcji niż posiadasz. Masz: " + owned);
+        if (request.getQuantity() > owned) {
+            throw new IllegalArgumentException("Portfolio status: " + owned);
         }
 
-        double price = alphaVantageService.getTransactionPrice(symbol, time);
-        StockTransaction tx = new StockTransaction(symbol, quantity, TransactionType.SELL, price, time, portfolio);
-        return stockTransactionRepository.save(tx);
+        double price = alphaService.getTransactionPrice(request.getSymbol(), request.getTime());
+        StockTransaction tx = new StockTransaction(request.getSymbol(), request.getQuantity(), TransactionType.SELL, price, request.getTime(), portfolio);
+        transactionRepo.save(tx);
+        return mapToDto(tx);
     }
 
+    public ResponseEntity<byte[]> generateSummaryCsv(Long portfolioId) {
+        Portfolio portfolio = portfolioService.getPortfolioById(portfolioId);
+        List<StockTransaction> txs = transactionRepo.findByPortfolioId(portfolioId);
 
-    public List<StockTransaction> findByPortfolio(Long portfolioId) {
-        return stockTransactionRepository.findByPortfolioId(portfolioId);
-    }
-
-
-    public double calculateProfit(Long portfolioId) {
-        List<StockTransaction> all = stockTransactionRepository.findByPortfolioId(portfolioId);
-
-        double totalBuy = all.stream()
-                .filter(tx -> tx.getTransactionType() == TransactionType.BUY)
-                .mapToDouble(tx -> tx.getQuantity() * tx.getPrice())
+        double profit = txs.stream()
+                .mapToDouble(t -> t.getTransactionType() == TransactionType.BUY ? -t.getQuantity() * t.getPrice() : t.getQuantity() * t.getPrice())
                 .sum();
 
-        double totalSell = all.stream()
-                .filter(tx -> tx.getTransactionType() == TransactionType.SELL)
-                .mapToDouble(tx -> tx.getQuantity() * tx.getPrice())
-                .sum();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        PrintWriter writer = new PrintWriter(out);
+        writer.println("ID,Symbol,Type,Quantity,Price,Timestamp");
+        txs.forEach(t -> writer.printf("%d,%s,%s,%d,%.2f,%s\n",
+                t.getId(), t.getSymbol(), t.getTransactionType(), t.getQuantity(), t.getPrice(), t.getTimestamp()));
+        writer.printf("\nTotal Profit/Loss:,%.2f", profit);
+        writer.flush();
 
-        return totalSell - totalBuy;
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.TEXT_PLAIN);
+        headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + portfolio.getName().replaceAll("[^a-zA-Z0-9_-]", "_") + "_summary.csv");
+
+        return ResponseEntity.ok().headers(headers).body(out.toByteArray());
     }
 
+    private TransactionReadModel mapToDto(StockTransaction tx) {
+        return new TransactionReadModel(
+                tx.getId(),
+                tx.getSymbol(),
+                tx.getTransactionType().name(),
+                tx.getQuantity(),
+                tx.getPrice(),
+                tx.getTimestamp().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+        );
+    }
 
 }

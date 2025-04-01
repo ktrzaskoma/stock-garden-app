@@ -20,7 +20,7 @@ public class StockTransaction {
 
     private double price;
 
-    private LocalDateTime timeStamp;
+    private LocalDateTime timestamp;
 
     @ManyToOne
     @JoinColumn(name = "portfolio_id")
@@ -30,12 +30,12 @@ public class StockTransaction {
     public StockTransaction() {
     }
 
-    public StockTransaction(String symbol, int quantity, TransactionType transactionType, double price, LocalDateTime timeStamp, Portfolio portfolio) {
+    public StockTransaction(String symbol, int quantity, TransactionType transactionType, double price, LocalDateTime timestamp, Portfolio portfolio) {
         this.symbol = symbol;
         this.quantity = quantity;
         this.transactionType = transactionType;
         this.price = price;
-        this.timeStamp = timeStamp;
+        this.timestamp = timestamp;
         this.portfolio = portfolio;
     }
 
@@ -79,12 +79,12 @@ public class StockTransaction {
         this.price = price;
     }
 
-    public LocalDateTime getTimeStamp() {
-        return timeStamp;
+    public LocalDateTime getTimestamp() {
+        return timestamp;
     }
 
-    public void setTimeStamp(LocalDateTime dateTime) {
-        this.timeStamp = dateTime;
+    public void setTimestamp(LocalDateTime dateTime) {
+        this.timestamp = dateTime;
     }
 
     public Portfolio getPortfolio() {

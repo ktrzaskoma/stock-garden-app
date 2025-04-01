@@ -28,7 +28,7 @@ public class AlphaVantageService {
 
     public double getTransactionPrice(String symbol, LocalDateTime dateTime) {
         String url = String.format(
-                "https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=%s&interval=5min&apikey=%s",
+                "https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=%s&interval=1min&apikey=%s",
                 symbol, apiKey
         );
 
@@ -37,7 +37,7 @@ public class AlphaVantageService {
 
         try {
             JsonNode root = objectMapper.readTree(restTemplate.getForObject(url, String.class));
-            JsonNode timeSeries = root.get("Time Series (5min)");
+            JsonNode timeSeries = root.get("Time Series (1min)");
 
             if (timeSeries.has(timpeStampKey)) {
                 return Double.parseDouble(timeSeries.get(timpeStampKey).get("1. open").asText());

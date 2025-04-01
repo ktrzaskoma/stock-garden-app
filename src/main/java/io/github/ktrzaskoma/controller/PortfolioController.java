@@ -1,16 +1,15 @@
 package io.github.ktrzaskoma.controller;
 
+import io.github.ktrzaskoma.dto.TransactionReadModel;
+import io.github.ktrzaskoma.dto.TransactionWriteModel;
 import io.github.ktrzaskoma.model.Portfolio;
-import io.github.ktrzaskoma.model.StockTransaction;
 import io.github.ktrzaskoma.service.PortfolioService;
 import io.github.ktrzaskoma.service.StockTransactionService;
-import org.springframework.format.annotation.DateTimeFormat;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/portfolio")
@@ -35,7 +34,7 @@ public class PortfolioController {
             if (p.getTransactions() != null) {
                 p.getTransactions().forEach(t -> t.setPortfolio(null));
             }
-        }).collect(Collectors.toList());
+        }).toList();
     }
 
     @GetMapping("/{id}")
@@ -48,42 +47,24 @@ public class PortfolioController {
     }
 
     @PostMapping("/{id}/buy")
-    public ResponseEntity<StockTransaction> buyStock(@PathVariable Long id,
-                                                     @RequestParam String symbol,
-                                                     @RequestParam int quantity,
-                                                     @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime time) {
-        Portfolio portfolio = portfolioService.getPortfolioById(id);
-        StockTransaction tx = transactionService.buy(portfolio, symbol, quantity, time);
-        tx.setPortfolio(null);
-        return ResponseEntity.ok(tx);
+    public ResponseEntity<TransactionReadModel> buyStock(@PathVariable Long id,
+                                                         @Valid @RequestBody TransactionWriteModel request) {
+        return ResponseEntity.ok(transactionService.handleBuy(id, request));
     }
 
     @PostMapping("/{id}/sell")
     public ResponseEntity<?> sellStock(@PathVariable Long id,
-                                       @RequestParam String symbol,
-                                       @RequestParam int quantity,
-                                       @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime time) {
+                                       @Valid @RequestBody TransactionWriteModel request) {
         try {
-            Portfolio portfolio = portfolioService.getPortfolioById(id);
-            StockTransaction tx = transactionService.sell(portfolio, symbol, quantity, time);
-            tx.setPortfolio(null);
-            return ResponseEntity.ok(tx);
+            return ResponseEntity.ok(transactionService.handleSell(id, request));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
 
     @GetMapping("/{id}/summary")
-    public ResponseEntity<String> summary(@PathVariable Long id) {
-        Portfolio portfolio = portfolioService.getPortfolioById(id);
-        double profit = transactionService.calculateProfit(id);
-
-        double roundProfit = Math.round(profit * 100.0) / 100.0;
-
-        if (profit >= 0) {
-          return ResponseEntity.ok("Profit: " + roundProfit);
-        }
-        return ResponseEntity.ok("Loss: " + roundProfit);
+    public ResponseEntity<byte[]> summary(@PathVariable Long id) {
+        return transactionService.generateSummaryCsv(id);
     }
 
 }
